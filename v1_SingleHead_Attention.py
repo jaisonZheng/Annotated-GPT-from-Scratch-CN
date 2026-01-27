@@ -1,14 +1,27 @@
 #【这份代码的前半部分就是bigram_handcode.py，但是将简单的根据上一个token预测改成了使用attention】
+# 对应视频 42:14 
+
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
+
+# hyperparameters
+batch_size = 32 # 一次同时处理几条字符串->next token
+block_size = 8 # 最大上下文长度？（即能看见前面的几个token？）
+max_iters = 3000
+eval_interval = 300
+learning_rate = 1e-2
+eval_iters = 200
+# ------------
 
 # 此行非手搓，仅用于下载数据集
 # !wget https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
 
-# 选择GPU
-import torch
+#【选择GPU】
 if (torch.cuda.is_available()):
     device = 'cuda'
 elif (torch.backends.mps.is_available()):
-    device = 'mps'
+    device = 'mps' # 增加对mac的支持
 else:
     device = 'cpu'
 
@@ -32,8 +45,6 @@ itos = {i:s for i,s in enumerate(chars)}
 encode = lambda s: [stoi[c] for c in s]
 decode = lambda l: "".join([itos[l[i]] for i in range(len(l))]) # "".join()将list中的元素连接成一个字符串
 
-import torch
-
 # 将encode之后的list转换成torch当中的tensor
 data = torch.tensor(encode(text), dtype=torch.long)
 
@@ -41,9 +52,6 @@ data = torch.tensor(encode(text), dtype=torch.long)
 n = int(0.9 * len(data))
 train_data = data[:n] # 这里没有将数据打乱，而是直接将前n个数据划分为训练集
 validation_data = data[n:]
-
-batch_size = 4 # 一次同时处理几条字符串->next token
-block_size = 8 # 上下文最长是几个字符？（即我们最多用几个字符来预测下一个字符）
 
 # LLM的精髓是根据前文预测下一个token
 # 这里就是要从原始数据中，提取出这样一种用于训练的数据模式：
@@ -62,16 +70,31 @@ def get_batch(split): # split是"train"或"validation"
     # torch.stack(tensors, dim=0, *, out=None) → Tensor
     # 将x和y都用stack堆叠成二维数组（应注意，计算机中的二维数组行和列的标号是和线性代数中反过来的）
     
+    # 在get_batch时，一定要记得将数据搬到GPU上
+    x, y = x.to(device), y.to(device)
     return x, y
 
-import torch
-import torch.nn as nn
-from torch.nn import functional as F
+#【评估loss函数】
+@torch.no_grad() # 告诉torch这个函数永远不用反向传播
+def estimate_loss():
+    out = {}
+    model.eval() # 在torch中开启评估模式，相当于一个全局开关，停止使用drop_out，BatchNorm等
+    for split in ['train', 'validation']:
+        losses = torch.zeros(eval_iters)
+        # 在数据集中采样eval_iters次然后取平均，获得更稳定的loss估计
+        for k in range(eval_iters): 
+            X, Y = get_batch(split)
+            logits, loss = model(X, Y)
+            losses[k] = loss.item()
+        out[split] = losses.mean()
+    model.train() # 评估完要调回train模式
+    return out
 
+#【模型】
 # BigramModel的先验假设是：每一个token仅依赖于其相邻的上一个token
 class BigramLanguageModel(nn.Module):
 
-    def __init__(self, vocab_size):
+    def __init__(self):
         super().__init__() # 这一行让我们能轻松地使用torch当中的各种组件（比如一键将数据搬到GPU）
         
         # 由于我们假设，每一个token仅依赖于上一个token
@@ -131,25 +154,19 @@ class BigramLanguageModel(nn.Module):
         
         return idx # 现在并非流式输出
 
-model = BigramLanguageModel(vocab_size)
-xb, yb = get_batch("train")
-logits, loss = model(xb, yb) # 这里将对象名当函数用，还是调用了python中的魔法方法__call__，从而调用了forward
+model = BigramLanguageModel()
+m = model.to(device) # 创建model后也要记得将model搬到GPU上
 
-# 先输出一遍没有经过训练的结果
-print("未训练时的输出：")
-print(decode(model.generate(idx = torch.zeros((1, 1), dtype=torch.long), max_new_tokens=500)[0].tolist()))
-# idx = torch.zeros((1, 1)...)意味着我们现在从头开始生成，batch_size=1只生成一个序列，只给了一个字符
-# 我们的generate返回的是(batch_size, block_size + max_new_tokens)的tensor，在这里就是(1, 1 + 500)
-# 虽然只有一行，其还是一个二维矩阵，我们取第一行，并从tensor转成list
-print("未训练时的loss：")
-print(loss.item())
-# loss.item()返回loss的数值，如果直接print(loss)则会显示tensor（数值+梯度追踪信息）
+# 不再输出没有经过训练的结果
 
 # 然后我们来训练一下
-optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3) # parameters()返回模型中所有需要优化的参数，还是torch.nn提供的便利
+optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate) # parameters()返回模型中所有需要优化的参数，还是torch.nn提供的便利
 
-batch_size = 32
-for step in range(100):
+for step in range(max_iters):
+    # 每eval_interval步输出一次当前loss
+    if step % eval_interval == 0:
+        losses = estimate_loss()
+        print(f"step {step}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
 
     # 获取训练数据
     xb, yb = get_batch("train")
@@ -161,12 +178,12 @@ for step in range(100):
     loss.backward()
     # 更新各层参数
     optimizer.step()
-    print(f"step: {step}, loss: {loss.item()}")
+
 
 print("训练结束后的输出：")
 print(decode(model.generate(idx = torch.zeros((1, 1), dtype=torch.long), max_new_tokens=500)[0].tolist()))
 
 # 好耶！ 
-# BigramLanguageModel部分到这里就算是结束了，
+# BigramLanguageModel部分到这里就算是结束了，此时loss ~ 4.5
 # 我们将在另一个文件中继续加上Attention
 
