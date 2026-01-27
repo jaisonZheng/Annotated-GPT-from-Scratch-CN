@@ -1,0 +1,172 @@
+#【这份代码的前半部分就是bigram_handcode.py，但是将简单的根据上一个token预测改成了使用attention】
+
+# 此行非手搓，仅用于下载数据集
+# !wget https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
+
+# 选择GPU
+import torch
+if (torch.cuda.is_available()):
+    device = 'cuda'
+elif (torch.backends.mps.is_available()):
+    device = 'mps'
+else:
+    device = 'cpu'
+
+#【数据处理】
+# 打开文件并读取
+with open("input.txt", "r", encoding="utf-8") as f: # 使用with的好处是自动关闭文件（上下文管理）
+    # 从f当中读取文件内容进text
+    text = f.read() 
+
+# 提取text中出现的所有字符
+chars = sorted(list(set(text))) # 先set去重，再list化，再sorted对list排序（set不可排序）
+
+vocab_size = len(chars)
+
+# 创造从字符串到整数索引的双向映射
+# 这就是这个简单的bigram程序的tokenizer
+stoi = {s:i for i,s in enumerate(chars)} # enumerate自动生成(index, value)的tuple
+itos = {i:s for i,s in enumerate(chars)}
+
+# tokenizer需要encode和decode函数（将字符串转成int list和从int list转成字符串）
+encode = lambda s: [stoi[c] for c in s]
+decode = lambda l: "".join([itos[l[i]] for i in range(len(l))]) # "".join()将list中的元素连接成一个字符串
+
+import torch
+
+# 将encode之后的list转换成torch当中的tensor
+data = torch.tensor(encode(text), dtype=torch.long)
+
+# 划分训练集和测试集
+n = int(0.9 * len(data))
+train_data = data[:n] # 这里没有将数据打乱，而是直接将前n个数据划分为训练集
+validation_data = data[n:]
+
+batch_size = 4 # 一次同时处理几条字符串->next token
+block_size = 8 # 上下文最长是几个字符？（即我们最多用几个字符来预测下一个字符）
+
+# LLM的精髓是根据前文预测下一个token
+# 这里就是要从原始数据中，提取出这样一种用于训练的数据模式：
+# 用第 [0], [0, 1], [0, 1, 2]...[0,..., block_size - 1]来预测第[1], [2], [3],..., [block_size]
+def get_batch(split): # split是"train"或"validation"
+    data = train_data if split == "train" else validation_data
+
+    # 随机出batch_size个序列开始的index
+    start_index = torch.randint(len(data) - block_size, (batch_size, )) # -block_size确保哪怕随机到最后一个，后面也还可以提取block_size个token
+    # torch.randint(low=0, high, size,device=None) → Tensor 
+    
+    # 从而以这些index为起点，将预测下一个token的数据对弄出来
+    # 并使用torch中的二维矩阵存储
+    x = torch.stack([data[st_i:st_i + block_size] for st_i in start_index])
+    y = torch.stack([data[st_i + 1:st_i + block_size + 1] for st_i in start_index])
+    # torch.stack(tensors, dim=0, *, out=None) → Tensor
+    # 将x和y都用stack堆叠成二维数组（应注意，计算机中的二维数组行和列的标号是和线性代数中反过来的）
+    
+    return x, y
+
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
+
+# BigramModel的先验假设是：每一个token仅依赖于其相邻的上一个token
+class BigramLanguageModel(nn.Module):
+
+    def __init__(self, vocab_size):
+        super().__init__() # 这一行让我们能轻松地使用torch当中的各种组件（比如一键将数据搬到GPU）
+        
+        # 由于我们假设，每一个token仅依赖于上一个token
+        # 并且，根据token_{i}，我们希望得到token_{i+1}的分布（即是23的概率有多少，42的概率又有多少？）
+        # 因此，我们建一个(vocab_size, vocab_size)的矩阵
+        # 第k行第j列代表着token_{k}的下一个是token_{j}的概率
+        self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
+        # torch.nn.Embedding本质上是一个巨大的表
+        # 现在初始化时，相当于是建了一个(vocab_size, vocab_size)的随机权重表
+
+    # forward函数即给定前面的字符序列，生成下一个字符的logits分布
+    # 并给出loss（如果是训练状态）
+    # 同时，forward函数是torch中的一个特殊函数（后续会提及）
+    def forward(self, idx, targets=None): 
+        # idx是大小为(batch_size, block_size)的tensor
+        # 有targets=None是为了照顾部署时，没有已知的下一个token
+        
+        logits = self.token_embedding_table(idx) # logit这个词指代softmax之前的原始数值
+
+        if targets is None:
+            loss = None
+        else:
+            # 由于entropy的计算需要logit是2D的，
+            # 即我们原本用batch和block两个维度来指代一个位置
+            # 但现在我们要对它们一视同仁
+            # 我们将logits展平
+            batch_size, block_size, logit_num = logits.shape
+            logits = logits.view(batch_size * block_size, logit_num)
+
+            # entropy计算要求targets是一维的（即正确选项的index），所以我们也将targets展平
+            targets = targets.view(batch_size * block_size)
+            # Tensor.view(*shape) → Tensor 改变数据的维度
+            
+            loss = F.cross_entropy(logits, targets)
+
+        return logits, loss
+
+    # generate函数利用forward函数，不断生成新的字符，从而输出一整段字符序列。
+    def generate(self, idx, max_new_tokens):
+        for _ in range(max_new_tokens):
+            logits, loss = self(idx) # 这里实际上调用了forward函数，torch自动帮忙处理了很多杂活
+            
+            # 由于我们在BigramModel中，只需要利用到logits的最后一个token
+            logits = logits[:, -1, :] # logits从(batch_size, block_size, vocab_size)变成了(batch_size, vocab_size)
+
+            # 对logits使用softmax
+            probs = F.softmax(logits, dim=-1) # dim=-1是因为最后一个维度是vocab_size（我们正是要vocab中所有token的概率分布）
+            
+            # 从probs分布中根据概率采样出下一个token是什么
+            idx_next = torch.multinomial(probs, num_samples=1)
+            # torch.multinomial(input, num_samples, ...) → LongTensor
+            # 之所以叫multinomial，是因为我们在有离散个选项的概率空间中采样
+            # 这就是multinomial分布（二项分布的推广）
+
+            # 将idx_next添加到idx的末尾，供下一次生成使用
+            idx = torch.cat((idx, idx_next), dim=1) # idx原形状为(batch_size, block_size), idx_next形状为(batch_size, 1), 添加了一行
+        
+        return idx # 现在并非流式输出
+
+model = BigramLanguageModel(vocab_size)
+xb, yb = get_batch("train")
+logits, loss = model(xb, yb) # 这里将对象名当函数用，还是调用了python中的魔法方法__call__，从而调用了forward
+
+# 先输出一遍没有经过训练的结果
+print("未训练时的输出：")
+print(decode(model.generate(idx = torch.zeros((1, 1), dtype=torch.long), max_new_tokens=500)[0].tolist()))
+# idx = torch.zeros((1, 1)...)意味着我们现在从头开始生成，batch_size=1只生成一个序列，只给了一个字符
+# 我们的generate返回的是(batch_size, block_size + max_new_tokens)的tensor，在这里就是(1, 1 + 500)
+# 虽然只有一行，其还是一个二维矩阵，我们取第一行，并从tensor转成list
+print("未训练时的loss：")
+print(loss.item())
+# loss.item()返回loss的数值，如果直接print(loss)则会显示tensor（数值+梯度追踪信息）
+
+# 然后我们来训练一下
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3) # parameters()返回模型中所有需要优化的参数，还是torch.nn提供的便利
+
+batch_size = 32
+for step in range(100):
+
+    # 获取训练数据
+    xb, yb = get_batch("train")
+
+    logits, loss = model(xb, yb) # 这一步torch会建立一个计算图，如果没有这一步backward就无法执行
+    # 由于torch默认累加梯度，所以在更新梯度之前要清零上一轮的梯度
+    optimizer.zero_grad(set_to_none=True) # set_to_none=True是小技巧，比设为0更省内存
+    # 反向传播计算各层梯度
+    loss.backward()
+    # 更新各层参数
+    optimizer.step()
+    print(f"step: {step}, loss: {loss.item()}")
+
+print("训练结束后的输出：")
+print(decode(model.generate(idx = torch.zeros((1, 1), dtype=torch.long), max_new_tokens=500)[0].tolist()))
+
+# 好耶！ 
+# BigramLanguageModel部分到这里就算是结束了，
+# 我们将在另一个文件中继续加上Attention
+
