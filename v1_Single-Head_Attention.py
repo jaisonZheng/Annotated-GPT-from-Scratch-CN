@@ -1,4 +1,4 @@
-#【这份代码的前半部分就是bigram_handcode.py，但是将简单的根据上一个token预测改成了使用attention】
+#【这份代码的前半部分就是bigram_handcode.py，但是将根据上一个token预测改成了使用单个self-attention】
 # 对应视频 42:14 
 
 import torch
@@ -8,10 +8,11 @@ from torch.nn import functional as F
 # hyperparameters
 batch_size = 32 # 一次同时处理几条字符串->next token
 block_size = 8 # 最大上下文长度？（即能看见前面的几个token？）
-max_iters = 3000
+max_iters = 5000
 eval_interval = 300
-learning_rate = 1e-2
+learning_rate = 1e-3
 eval_iters = 200
+n_embd = 32
 # ------------
 
 # 此行非手搓，仅用于下载数据集
@@ -90,6 +91,38 @@ def estimate_loss():
     model.train() # 评估完要调回train模式
     return out
 
+
+class Head(nn.Module):
+    """实现一个注意力头"""
+    def __init__(self, head_size):
+        super().__init__()
+        self.key = nn.Linear(n_embd, head_size, bias=False)
+        self.query = nn.Linear(n_embd, head_size, bias=False) # 这里key和query看起来对称，但最后一定会各司其职，想想为什么？
+        self.value = nn.Linear(n_embd, head_size, bias=False)
+
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+        # 当将这个model搬到GPU时，register_buffer会将这个tensor也搬到GPU
+        # 这里tril需要使用register_buffer，因为tril本身不更新，但需要在训练中参与计算
+        # 而后续的k, q, v由原本就在GPU上的x计算出来，天然在GPU上，所以不需要register_buffer
+
+
+    def forward(self, x):
+        B, T, C = x.shape
+        k = self.key(x) # (B, T, head_size)
+        q = self.query(x) # (B, T, head_size)
+        wei = q @ k.transpose(-2, -1) # (B, T, head_size) @ (B, head_size, T) -> (B, T, T)
+        # 高维矩阵的乘法规则是，除了最后两个维度外，前面的所有维度都看作是“批处理维度”。
+        # 注意此处q一定要在k左边，不然最后q k矩阵的作用会是与变量名相反的
+
+        # 只使用下三角矩阵，确保每个token只能跟自己和自己之前的token交流(decoder-only)
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # 将上三角部分（不包括对角线）设为负无穷，这样softmax之后就会变成0； [:T, :T]切片动态适应T长度
+        wei = F.softmax(wei, dim=-1) # 对每个位置i，计算它对所有位置j的注意力权重
+
+        v = self.value(x) # (B, T, head_size)
+        out = wei @ v # (B, T, T) @ (B, T, head_size) -> (B, T, head_size)
+        return out
+
+
 #【模型】
 # BigramModel的先验假设是：每一个token仅依赖于其相邻的上一个token
 class BigramLanguageModel(nn.Module):
@@ -97,22 +130,44 @@ class BigramLanguageModel(nn.Module):
     def __init__(self):
         super().__init__() # 这一行让我们能轻松地使用torch当中的各种组件（比如一键将数据搬到GPU）
         
-        # 由于我们假设，每一个token仅依赖于上一个token
-        # 并且，根据token_{i}，我们希望得到token_{i+1}的分布（即是23的概率有多少，42的概率又有多少？）
-        # 因此，我们建一个(vocab_size, vocab_size)的矩阵
-        # 第k行第j列代表着token_{k}的下一个是token_{j}的概率
-        self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
-        # torch.nn.Embedding本质上是一个巨大的表
-        # 现在初始化时，相当于是建了一个(vocab_size, vocab_size)的随机权重表
+        # 不再使用char的编号（一维）来表示一个token
+        # 而是用n_embd维的向量来表示一个token
+        # 这里的n_embd相当于CV中卷积的总通道数
+        self.token_embedding_table = nn.Embedding(vocab_size, n_embd) # n_embd是num_embedding的缩写
+        
+        # 由于Attention并不像卷积核一样天生带有空间信息
+        # 所以我们要给每个位置用一个向量来添加位置信息
+        self.position_embedding_table = nn.Embedding(block_size, n_embd) 
+        # 创建block_size个不同的位置向量，每个位置一个n_embd维的向量
+        # 位置0 → 向量0，位置1 → 向量1，...，位置7 → 向量7
+
+        self.sa_head = Head(n_embd) # self-attention head
+        # 创建一个线性层（作为Head），来将n_embd维的向量映射到vocab_size维的logits
+        self.lm_head = nn.Linear(n_embd, vocab_size) # lm_head是language model head的缩写
 
     # forward函数即给定前面的字符序列，生成下一个字符的logits分布
     # 并给出loss（如果是训练状态）
     # 同时，forward函数是torch中的一个特殊函数（后续会提及）
     def forward(self, idx, targets=None): 
+        B, T = idx.shape # B是Batch_size，T则借鉴了序列模型中的习惯，用Time表示block_size
+
         # idx是大小为(batch_size, block_size)的tensor
         # 有targets=None是为了照顾部署时，没有已知的下一个token
         
-        logits = self.token_embedding_table(idx) # logit这个词指代softmax之前的原始数值
+        # 先从idx中得到每个token的embedding向量（相当于是得到了每个token更丰富的信息表示）
+        tok_emb = self.token_embedding_table(idx) 
+        
+        # 将每个位置的位置向量组合起来
+        pos_emb = self.position_embedding_table(torch.arange(T, device=device))
+        # torch.arange(T, device=device)生成一个从0到T-1的索引列表，一次性批量提取前 T 个位置的向量。
+        
+        # 将token的embedding和位置的embedding相加
+        x = tok_emb + pos_emb
+        
+        # 通过self-attention head提取特征
+        x = self.sa_head(x)
+        # 然后用language model Head将特征映射到vocab_size维的logits
+        logits = self.lm_head(x) # logit这个词指代softmax之前的原始数值
 
         if targets is None:
             loss = None
@@ -135,7 +190,10 @@ class BigramLanguageModel(nn.Module):
     # generate函数利用forward函数，不断生成新的字符，从而输出一整段字符序列。
     def generate(self, idx, max_new_tokens):
         for _ in range(max_new_tokens):
-            logits, loss = self(idx) # 这里实际上调用了forward函数，torch自动帮忙处理了很多杂活
+            # 只取最后block_size个token进行预测
+            idx_cond = idx[:, -block_size:]
+
+            logits, loss = self(idx_cond) # 这里实际上调用了forward函数，torch自动帮忙处理了很多杂活
             
             # 由于我们在BigramModel中，只需要利用到logits的最后一个token
             logits = logits[:, -1, :] # logits从(batch_size, block_size, vocab_size)变成了(batch_size, vocab_size)
@@ -157,7 +215,7 @@ class BigramLanguageModel(nn.Module):
 model = BigramLanguageModel()
 m = model.to(device) # 创建model后也要记得将model搬到GPU上
 
-# 不再输出没有经过训练的结果
+# 不再输出未训练时的结果
 
 # 然后我们来训练一下
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate) # parameters()返回模型中所有需要优化的参数，还是torch.nn提供的便利
@@ -166,7 +224,7 @@ for step in range(max_iters):
     # 每eval_interval步输出一次当前loss
     if step % eval_interval == 0:
         losses = estimate_loss()
-        print(f"step {step}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        print(f"step {step}: train loss {losses['train']:.4f}, val loss {losses['validation']:.4f}")
 
     # 获取训练数据
     xb, yb = get_batch("train")
@@ -181,9 +239,8 @@ for step in range(max_iters):
 
 
 print("训练结束后的输出：")
-print(decode(model.generate(idx = torch.zeros((1, 1), dtype=torch.long), max_new_tokens=500)[0].tolist()))
+print(decode(model.generate(idx = torch.zeros((1, 1), dtype=torch.long, device=device), max_new_tokens=500)[0].tolist()))
 
 # 好耶！ 
-# BigramLanguageModel部分到这里就算是结束了，此时loss ~ 4.5
-# 我们将在另一个文件中继续加上Attention
-
+# Single-Head Attention部分到这里就算是结束了，此时loss ~ 2.4
+# 我们将在另一个文件中将single-head attention 变为multi-head attention
