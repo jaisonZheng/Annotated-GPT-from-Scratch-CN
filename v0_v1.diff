@@ -1,14 +1,10 @@
---- v0_Bigram.py	2026-01-27 12:14:17
-+++ v1_Single-Head_Attention.py	2026-01-27 17:38:47
-@@ -1,5 +1,5 @@
 -#【这份代码旨在实现一个简单的Bigram Language Model，展示“预测下一个token”这一精髓】
 -# 对应视频 7:53 - 42:13 
 +#【这份代码的前半部分就是bigram_handcode.py，但是将根据上一个token预测改成了使用单个self-attention】
-+# 对应视频 42:14 
++# 对应视频 42:14 - 1:21:58
  
  import torch
  import torch.nn as nn
-@@ -10,8 +10,9 @@
  block_size = 8 # 最大上下文长度？（即能看见前面的几个token？）
  max_iters = 5000
  eval_interval = 300
@@ -17,11 +13,6 @@
  eval_iters = 200
 +n_embd = 32
  # ------------
- 
- # 此行非手搓，仅用于下载数据集
-@@ -90,6 +91,38 @@
-     model.train() # 评估完要调回train模式
-     return out
  
 +
 +class Head(nn.Module):
@@ -58,7 +49,6 @@
  #【模型】
  # BigramModel的先验假设是：每一个token仅依赖于其相邻的上一个token
  class BigramLanguageModel(nn.Module):
-@@ -97,22 +130,44 @@
      def __init__(self):
          super().__init__() # 这一行让我们能轻松地使用torch当中的各种组件（比如一键将数据搬到GPU）
          
@@ -111,7 +101,6 @@
  
          if targets is None:
              loss = None
-@@ -135,7 +190,10 @@
      # generate函数利用forward函数，不断生成新的字符，从而输出一整段字符序列。
      def generate(self, idx, max_new_tokens):
          for _ in range(max_new_tokens):
@@ -123,7 +112,6 @@
              
              # 由于我们在BigramModel中，只需要利用到logits的最后一个token
              logits = logits[:, -1, :] # logits从(batch_size, block_size, vocab_size)变成了(batch_size, vocab_size)
-@@ -157,21 +215,8 @@
  model = BigramLanguageModel()
  m = model.to(device) # 创建model后也要记得将model搬到GPU上
  
@@ -146,7 +134,6 @@
  # 然后我们来训练一下
  optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate) # parameters()返回模型中所有需要优化的参数，还是torch.nn提供的便利
  
-@@ -197,6 +242,5 @@
  print(decode(model.generate(idx = torch.zeros((1, 1), dtype=torch.long, device=device), max_new_tokens=500)[0].tolist()))
  
  # 好耶！ 

@@ -1,0 +1,66 @@
+-#【这份代码的前半部分就是bigram_handcode.py，但是将根据上一个token预测改成了使用单个self-attention】
+-# 对应视频 42:14 - 1:21:58
++#【从single-head attention进化为multi-head attention，并添加feedforward层】
++# 对应视频 1:21:59 - 1:26:33
+ 
++class MultiHeadAttention(nn.Module):
++    """利用现有的单头注意力实现多头注意力"""
++
++    def __init__(self, num_heads, head_size):
++        super().__init__()
++        # 将Embedding的Channel分组，每一组用一个小的Head，这就是Multi-Head Attention
++        self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)]) # 在pytorch中要用ModuleList而不是python的list
++        
++    def forward(self, x):
++        # 将不同Head得到的结果按照Channel维度拼接起来，这样又恢复了原始维度
++        out = torch.cat([h(x) for h in self.heads], dim=-1)
++        return out
++
++
++class FeedForward(nn.Module):
++    """一个简单的浅层神经网路，让Multi-Head可以互相交流"""
++    def __init__(self, n_embd):
++        super().__init__()
++        self.net = nn.Sequential(
++            nn.Linear(n_embd, n_embd),
++            nn.ReLU(),
++        )
++
++    def forward(self, x):
++        return self.net(x)
++
+ #【模型】
+ # BigramModel的先验假设是：每一个token仅依赖于其相邻的上一个token
+ class BigramLanguageModel(nn.Module):
+         # 创建block_size个不同的位置向量，每个位置一个n_embd维的向量
+         # 位置0 → 向量0，位置1 → 向量1，...，位置7 → 向量7
+ 
+-        self.sa_head = Head(n_embd) # self-attention head
++        # 多头注意力
++        self.sa_heads = MultiHeadAttention(4, n_embd//4) # 4个8维的self-attention head堆叠
++        # 多头注意力之后的feedfoward层
++        self.ffwd = FeedForward(n_embd)
++
+         # 创建一个线性层（作为Head），来将n_embd维的向量映射到vocab_size维的logits
+         self.lm_head = nn.Linear(n_embd, vocab_size) # lm_head是language model head的缩写
+ 
+         x = tok_emb + pos_emb
+         
+         # 通过self-attention head提取特征
+-        x = self.sa_head(x)
++        x = self.sa_heads(x)
++        # 通过feedfoward层
++        x = self.ffwd(x)    
++
+         # 然后用language model Head将特征映射到vocab_size维的logits
+         logits = self.lm_head(x) # logit这个词指代softmax之前的原始数值
+ 
+ print(decode(model.generate(idx = torch.zeros((1, 1), dtype=torch.long, device=device), max_new_tokens=500)[0].tolist()))
+ 
+ # 好耶！ 
+-# Single-Head Attention部分到这里就算是结束了，此时loss ~ 2.4
+-# 我们将在另一个文件中将single-head attention 变为multi-head attention
+\ No newline at end of file
++# Multi-Head Attention部分到这里就算是结束了，此时loss ~ 2.3
++# 我们将在另一个文件中将现有组件模块化成一个个block，以便堆叠，并继续添加residual connection
+\ No newline at end of file
