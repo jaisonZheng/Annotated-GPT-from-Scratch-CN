@@ -1,5 +1,5 @@
-#【从single-head attention进化为multi-head attention，并添加feedforward层】
-# 对应视频 1:21:59 - 1:26:33
+#【将原有的组件模块化，方便堆叠，并添加Residual Connections】
+# 对应视频 1:26:34 - 1:32:50
 
 import torch
 import torch.nn as nn
@@ -130,10 +130,13 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         # 将Embedding的Channel分组，每一组用一个小的Head，这就是Multi-Head Attention
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)]) # 在pytorch中要用ModuleList而不是python的list
-        
+        self.proj = nn.Linear(n_embd, n_embd)
     def forward(self, x):
         # 将不同Head得到的结果按照Channel维度拼接起来，这样又恢复了原始维度
         out = torch.cat([h(x) for h in self.heads], dim=-1)
+        # 我们希望各个Head之间能相互交流，所以我们再叠一个线性变换层。
+        # 这一层决定了头注意力的结果应该以多大的比例、什么样的方式写入残差流。
+        out = self.proj(out)
         return out
 
 
@@ -142,12 +145,33 @@ class FeedForward(nn.Module):
     def __init__(self, n_embd):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_embd, n_embd),
+            nn.Linear(n_embd, 4 * n_embd), # 让FeedForward的中间隐藏层扩大四倍，增强模型表达能力
             nn.ReLU(),
+            nn.Linear(4 * n_embd, n_embd), # 恢复回原始维度
         )
 
     def forward(self, x):
         return self.net(x)
+
+
+class Block(nn.Module):
+    """Transformer的单个组件"""
+
+    def __init__(self, n_embd, n_heads):
+        super().__init__()
+        head_size = n_embd // n_heads
+        self.sa = MultiHeadAttention(n_heads, head_size) # sa是self-attention的缩写
+        self.ffwd = FeedForward(n_embd)
+
+    def forward(self, x):
+        #【Residual Connection】
+        x = x + self.sa(x)
+        x = x + self.ffwd(x)
+        # 应当注意，残差连接既要越过self-attention层，又要越过feedforward层
+        # 一个block中有两个残差连接
+        # 这是为了让self-attention部分的“沟通”和feedforward部分的“思考”能够解耦
+        return x
+
 
 #【模型】
 # BigramModel的先验假设是：每一个token仅依赖于其相邻的上一个token
@@ -167,10 +191,11 @@ class BigramLanguageModel(nn.Module):
         # 创建block_size个不同的位置向量，每个位置一个n_embd维的向量
         # 位置0 → 向量0，位置1 → 向量1，...，位置7 → 向量7
 
-        # 多头注意力
-        self.sa_heads = MultiHeadAttention(4, n_embd//4) # 4个8维的self-attention head堆叠
-        # 多头注意力之后的feedfoward层
-        self.ffwd = FeedForward(n_embd)
+        self.blocks = nn.Sequential(
+            Block(n_embd, n_heads=4),
+            Block(n_embd, n_heads=4),
+            Block(n_embd, n_heads=4),
+        )
 
         # 创建一个线性层（作为Head），来将n_embd维的向量映射到vocab_size维的logits
         self.lm_head = nn.Linear(n_embd, vocab_size) # lm_head是language model head的缩写
@@ -194,10 +219,8 @@ class BigramLanguageModel(nn.Module):
         # 将token的embedding和位置的embedding相加
         x = tok_emb + pos_emb
         
-        # 通过self-attention head提取特征
-        x = self.sa_heads(x)
-        # 通过feedfoward层
-        x = self.ffwd(x)    
+        # 通过堆叠的blocks
+        x = self.blocks(x)
 
         # 然后用language model Head将特征映射到vocab_size维的logits
         logits = self.lm_head(x) # logit这个词指代softmax之前的原始数值
@@ -275,5 +298,5 @@ print("训练结束后的输出：")
 print(decode(model.generate(idx = torch.zeros((1, 1), dtype=torch.long, device=device), max_new_tokens=500)[0].tolist()))
 
 # 好耶！ 
-# Multi-Head Attention部分到这里就算是结束了，此时loss ~ 2.3
-# 我们将在另一个文件中将现有组件模块化成一个个block，以便堆叠，并继续添加residual connection
+# Residual Connection部分到这里就算是结束了，此时loss ~ 2.1
+# 我们将在另一个文件中继续添加Layer Normalization
