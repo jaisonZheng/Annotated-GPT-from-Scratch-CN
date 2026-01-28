@@ -1,8 +1,6 @@
 # Annotated-GPT-from-Scratch-CN
 
-想要手搓复现一个Transformer？复现GPT得预训练部分？快去看Andrej Karpathy的神级视频[Let's build GPT: from scratch, in code, spelled out.](https://youtu.be/kCc8FmEb1nY?si=ggbZ0AJ2oHnFjHbP)
-
-想亲手复现一个 Transformer？想实现 GPT 的预训练部分？强烈推荐你去看 Andrej Karpathy 的神级视频：Let's build GPT: from scratch, in code, spelled out.
+想亲手复现一个 Transformer？想实现 GPT 的预训练部分？强烈推荐你去看 Andrej Karpathy 的神级视频：[Let's build GPT: from scratch, in code, spelled out.](https://youtu.be/kCc8FmEb1nY?si=ggbZ0AJ2oHnFjHbP)
 
 需要带有详细中文注释的代码？本仓库 Annotated-GPT-from-Scratch-CN 正好能满足你的需求！
 仓库中的所有代码都是我一行一行手敲出来的，并在注释中详细写下了我的理解和思考。
