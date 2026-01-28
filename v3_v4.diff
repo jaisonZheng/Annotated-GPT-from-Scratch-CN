@@ -1,0 +1,75 @@
+-#【将原有的组件模块化，方便堆叠，并添加Residual Connections】
+-# 对应视频 1:26:34 - 1:32:50
++#【添加Layer Normalization】
++# 对应视频 1:32:51 - 1:37:43
+
++#【手搓版本的LayerNorm，实际上并没有用到】
++class LayerNorm:
++    def __init__(self, dim, eps=1e-5):
++        self.eps = eps
++        self.gamma = torch.ones(dim)
++        self.beta = torch.zeros(dim) # 两个可学习参数
++
++
++    def __call__(self, x):
++        # LayerNorm不分训练模式和推理模式
++        xmean = x.mean(1, keepdim=True) # 计算均值
++        xvar = x.var(1, keepdim=True)   # 计算方差       
++        # 注意，如果是BatchNorm，上面两个1应该为0
++        # BatchNorm沿batch维度（列）计算不同样本的均值和方差 
++        # 而Hinton说：“我们应关注神经元之间的均值和方差，而不是关注样本”
++        # 所以LayerNorm是沿行方向的
++
++        # 标准化
++        xhat = (x - xmean) / torch.sqrt(xvar + self.eps) 
++        # 分母有个epsilon是为了防止除以0
++
++        # y = gamma \odot x + beta （odot意为逐元素相乘）
++        self.out = self.gamma * xhat + self.beta
++        return self.out
+ 
++    def parameters(self):
++        return [self.gamma, self.beta]
+ 
+ class Block(nn.Module):
+     """Transformer的单个组件"""
+ 
+     def __init__(self, n_embd, n_heads):
+         super().__init__()
+         head_size = n_embd // n_heads
+         self.sa = MultiHeadAttention(n_heads, head_size) # sa是self-attention的缩写
+         self.ffwd = FeedForward(n_embd)
++        # 不能共用同一个LayerNorm对象，是因为每个LayerNorm有自己的gamma和beta
++        self.ln1 = nn.LayerNorm(n_embd)
++        self.ln2 = nn.LayerNorm(n_embd)
+ 
+     def forward(self, x):
+-        #【Residual Connection】
+-        x = x + self.sa(x)
+-        x = x + self.ffwd(x)
++        #【Residual Connection and Layer Normalization】
++        x = x + self.sa(self.ln1(x))
++        x = x + self.ffwd(self.ln2(x))
+         # 应当注意，残差连接既要越过self-attention层，又要越过feedforward层
+         # 一个block中有两个残差连接
+         # 这是为了让self-attention部分的“沟通”和feedforward部分的“思考”能够解耦
++        # 这里使用的是Pre-Norm而不是Post-Norm（这也是现代Transformer和原始版本的Transformer主要的不同点）
++        # Pre-Norm是在残差连接之前进行LayerNorm，Post-Norm是在残差连接之后进行LayerNorm
++        # Pre-Norm能让Residual Connection的“梯度高速公路”更加纯净
++        # 从而让梯度流动更加稳定
+         return x
+ 
++        self.blocks = nn.Sequential(
++            Block(n_embd, n_heads=4),
++            Block(n_embd, n_heads=4),
++            Block(n_embd, n_heads=4),
++            nn.LayerNorm(n_embd), # 不要忘了在最后一个Block之后额外加一个LayerNorm（因为最后一个block里的Residual Connection并没有经过Layer Norm）
++        )
+  
+ # 好耶！ 
+-# Residual Connection部分到这里就算是结束了，此时loss ~ 2.1
+-# 我们将在另一个文件中继续添加Layer Normalization
+\ No newline at end of file
++# LayerNorm部分到这里就算是结束了，此时loss ~ 2.1
++# 我们将在另一个文件中完成最后一步：Scaling！
+\ No newline at end of file
