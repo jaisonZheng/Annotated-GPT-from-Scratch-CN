@@ -10,13 +10,14 @@
 
 在 diff 文件夹中，展示了各个版本之间的差异。如果你只想关注每一步的变化，可以直接点击下表中的超链接跳转查看。
 
-| 起始版本 | 目标版本 | Diff 文件                                                                                                    | 说明                     |
-| ---- | ---- | ---------------------------------------------------------------------------------------------------------- | ---------------------- |
-| v0   | v1   | [v0_v1.diff](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/difference/v0_v1.diff) | 初版 Bigram 模型到单头注意力的改动  |
-| v1   | v2   | [v1_v2.diff](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/difference/v1_v2.diff) | 单头注意力扩展为多头注意力          |
-| v2   | v3   | [v2_v3.diff](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/difference/v2_v3.diff) | 引入残差连接与层堆叠             |
-| v3   | v4   | [v3_v4.diff](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/difference/v3_v4.diff) | 添加 Layer Normalization |
-| v4   | v5   | [v4_v5.diff](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/difference/v4_v5.diff) | 扩充模型规模并引入正则化           |
+| 版本 | 代码文件 | Diff 文件 | 说明 |
+| --- | --- | --- | --- |
+| v0 | [v0_Bigram.py](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/code_data/v0_Bigram.py) | — | 初版 Bigram 模型，仅根据上一个 token 预测下一个 |
+| v1 | [v1_Single-Head_Attention.py](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/code_data/v1_Single-Head_Attention.py) | [v0_v1.diff](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/difference/v0_v1.diff) | 引入单头注意力机制 |
+| v2 | [v2_Multi-Head_Attention.py](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/code_data/v2_Multi-Head_Attention.py) | [v1_v2.diff](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/difference/v1_v2.diff) | 扩展为多头注意力 |
+| v3 | [v3_Residual_Connections.py](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/code_data/v3_Residual_Connections.py) | [v2_v3.diff](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/difference/v2_v3.diff) | 堆叠 Block 并加入残差连接 |
+| v4 | [v4_Layer_Normalization.py](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/code_data/v4_Layer_Normalization.py) | [v3_v4.diff](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/difference/v3_v4.diff) | 添加 Layer Normalization |
+| v5 | [v5_Scaling_Up.py](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/code_data/v5_Scaling_Up.py) | [v4_v5.diff](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/difference/v4_v5.diff) | 扩充模型规模并引入正则化 |
 
 ### 使用方式
 你可以按照 Karpathy 推荐的方法，先看懂代码，然后关掉代码，自己手搓一遍加深理解。
