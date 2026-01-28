@@ -26,33 +26,47 @@ code文件夹下，有各个阶段模型的代码。
 ### 效果预览
 #### v0_Bigram模型效果
 _未经训练的输出；loss:4.5_
-![](IMG-20260127121443731.png)
+
+<img width="696" height="258" alt="IMG-20260127121443731" src="https://github.com/user-attachments/assets/13625864-e77d-4ec5-90b6-c0224eba2007" />
+
+
 _经过训练的输出；loss:2.5_
-![](IMG-20260127121550420.png)
+
+<img width="699" height="391" alt="IMG-20260127121550420" src="https://github.com/user-attachments/assets/83d83ef2-c30a-425d-8803-d6c49fb894c5" />
+
 可以看到，只根据上一个token进行预测的Bigram模型，经过训练之后，似乎也有一点莎士比亚的样子，但是说的明显不是英语。
 
 
 #### v1_Single-Head_Attention效果
-![](IMG-20260127173720488.png)
+<img width="628" height="377" alt="IMG-20260127173720488" src="https://github.com/user-attachments/assets/eed8f581-1de8-46d9-a555-d12b8cb29684" />
+
 此时loss ~ 2.4，比2.5稍好，但是生成的文本仍然不是英语。
 
 #### v2_Multi-Head_Attention效果
-![](IMG-20260127210506553.png)
+<img width="1674" height="962" alt="IMG-20260127210506553" src="https://github.com/user-attachments/assets/00907841-a61f-4411-925d-72bd49c7e2c3" />
+
 _loss ~ 2.3，似乎长进不多，但能看到一些英语单词了。_
 
 #### v3_Residual_Connections
 一开始我只是堆叠了Block，以下是效果：
-![](IMG-20260127212512074.png)
+
+<img width="2006" height="678" alt="IMG-20260127212512074" src="https://github.com/user-attachments/assets/e52f19c9-0f41-40c7-baf9-0bf28384318b" />
+
 _loss ~ 2.3，几乎没有长进。甚至可以说有退步(2.29 -> 2.31)，这是因为深层神经网络不好训练_
 加了residual connection
-![](IMG-20260127215226826.png)_loss大幅度降到了2.1。WOW！_
+
+<img width="794" height="397" alt="IMG-20260127215226826" src="https://github.com/user-attachments/assets/55242306-30fc-4ec5-8e8e-8d9fe47457ef" />
+
+_loss大幅度降到了2.1。WOW！_
 
 #### v4_Layer_Normalization
-![](IMG-20260127231334200.png)
+<img width="1013" height="360" alt="IMG-20260127231334200" src="https://github.com/user-attachments/assets/eb17a27c-422c-4261-9e6b-b0d428196eb1" />
+
 _loss稍微下降，但是输出仍然不是非常英语，看来我要使出最后的大招：Scaling了！_
 
 #### v5_Scaling_Up
-![](IMG-20260128103826230.png)
+<img width="646" height="515" alt="IMG-20260128103826230" src="https://github.com/user-attachments/assets/0f70c688-99b7-4570-a2a0-fd8c0b53c0a0" />
+
 _loss从2.1大幅下降到了1.5！WOW！！！！_
 
 ok，那让我们来欣赏一下这段文本吧：（经由Gemini3 Flash翻译）
