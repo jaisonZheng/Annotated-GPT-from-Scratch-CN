@@ -1,13 +1,3 @@
---- v4_Layer_Normalization.py	2026-01-27 23:07:01
-+++ v5_Scaling_Up.py	2026-01-28 09:54:06
-@@ -1,338 +1,345 @@
- #【添加Layer Normalization】
- # 对应视频 1:32:51 - 1:37:43
- 
- import torch
- import torch.nn as nn
- from torch.nn import functional as F
- 
  # hyperparameters
 -batch_size = 32 # 一次同时处理几条字符串->next token
 -block_size = 8 # 最大上下文长度？（即能看见前面的几个token？）
