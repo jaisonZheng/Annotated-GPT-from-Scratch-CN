@@ -2,13 +2,15 @@
 
 想要手搓复现一个Transformer？复现GPT得预训练部分？快去看Andrej Karpathy的神级视频[Let's build GPT: from scratch, in code, spelled out.](https://youtu.be/kCc8FmEb1nY?si=ggbZ0AJ2oHnFjHbP)
 
-需要有详细的中文注释的代码？这个仓库Annotated-GPT-from-Scratch-CN将完美满足你的要求！
-仓库中所有代码都是一个字符一个字符手敲的，在详细的中文注释中写了我对代码的理解。
+想亲手复现一个 Transformer？想实现 GPT 的预训练部分？强烈推荐你去看 Andrej Karpathy 的神级视频：Let's build GPT: from scratch, in code, spelled out.
 
-code文件夹下，有各个阶段模型的代码。
-从只根据上一个token进行预测的BigramModel，到增加单头注意力，多头注意力，残差连接，Layer Normalization，并最终Scaling Up。我将不同的组件在不同的文件中逐步添加，以展示增加不同组件后的效果。
+需要带有详细中文注释的代码？本仓库 Annotated-GPT-from-Scratch-CN 正好能满足你的需求！
+仓库中的所有代码都是我一行一行手敲出来的，并在注释中详细写下了我的理解和思考。
 
-在diff文件夹中，展示了各个文件之间的差异，如果你只想看变化部分，可以点击下面表格中的超链接进行跳转。
+在 code 文件夹下，你可以找到各个阶段模型的代码。
+从最基础的 BigramModel（只根据上一个 token 预测下一个），到加入单头注意力、多头注意力、残差连接、Layer Normalization，最后实现 Scaling Up。我将不同的组件分阶段、分文件逐步添加，方便你观察每一步的变化和效果。
+
+在 diff 文件夹中，展示了各个版本之间的差异。如果你只想关注每一步的变化，可以直接点击下表中的超链接跳转查看。
 
 | 起始版本 | 目标版本 | Diff 文件                                                                                                    | 说明                     |
 | ---- | ---- | ---------------------------------------------------------------------------------------------------------- | ---------------------- |
@@ -19,9 +21,9 @@ code文件夹下，有各个阶段模型的代码。
 | v4   | v5   | [v4_v5.diff](https://github.com/jaisonZheng/Annotated-GPT-from-Scratch-CN/blob/main/difference/v4_v5.diff) | 扩充模型规模并引入正则化           |
 
 ### 使用方式
-你可以用Andrej Karpathy推荐的方式，看完代码之后将代码关掉，然后自己手搓复现一遍。
-也可以只是读懂代码，然后将每个文件运行一遍。
-注意：v5_Scaling_up.py需要在较好的显卡上运行，其余代码均可以在笔记本电脑上运行。
+你可以按照 Karpathy 推荐的方法，先看懂代码，然后关掉代码，自己手搓一遍加深理解。
+也可以直接阅读并运行每个文件，逐步体会模型的演变。
+注意：v5_Scaling_up.py 需要较好的显卡支持，其余代码在普通笔记本上也能运行。
 
 ### 效果预览
 #### v0_Bigram模型效果
@@ -43,24 +45,25 @@ _经过训练的输出；loss:2.5_
 此时loss ~ 2.4，比2.5稍好，但是生成的文本仍然不是英语。
 
 #### v2_Multi-Head_Attention效果
-<img width="1674" height="962" alt="IMG-20260127210506553" src="https://github.com/user-attachments/assets/00907841-a61f-4411-925d-72bd49c7e2c3" />
+<img width="800" height="400" alt="IMG-20260127210506553" src="https://github.com/user-attachments/assets/00907841-a61f-4411-925d-72bd49c7e2c3" />
 
 _loss ~ 2.3，似乎长进不多，但能看到一些英语单词了。_
 
 #### v3_Residual_Connections
 一开始我只是堆叠了Block，以下是效果：
 
-<img width="2006" height="678" alt="IMG-20260127212512074" src="https://github.com/user-attachments/assets/e52f19c9-0f41-40c7-baf9-0bf28384318b" />
+<img width="800" height="270" alt="IMG-20260127212512074" src="https://github.com/user-attachments/assets/e52f19c9-0f41-40c7-baf9-0bf28384318b" />
 
 _loss ~ 2.3，几乎没有长进。甚至可以说有退步(2.29 -> 2.31)，这是因为深层神经网络不好训练_
-加了residual connection
+
+加了residual connection后：
 
 <img width="794" height="397" alt="IMG-20260127215226826" src="https://github.com/user-attachments/assets/55242306-30fc-4ec5-8e8e-8d9fe47457ef" />
 
 _loss大幅度降到了2.1。WOW！_
 
 #### v4_Layer_Normalization
-<img width="1013" height="360" alt="IMG-20260127231334200" src="https://github.com/user-attachments/assets/eb17a27c-422c-4261-9e6b-b0d428196eb1" />
+<img width="800" height="284" alt="IMG-20260127231334200" src="https://github.com/user-attachments/assets/eb17a27c-422c-4261-9e6b-b0d428196eb1" />
 
 _loss稍微下降，但是输出仍然不是非常英语，看来我要使出最后的大招：Scaling了！_
 
