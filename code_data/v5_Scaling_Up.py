@@ -1,5 +1,5 @@
-#【添加Layer Normalization】
-# 对应视频 1:32:51 - 1:37:43
+#【Scaling Up！】
+# 对应视频 1:37:44 - 1:42:28
 
 import torch
 import torch.nn as nn
