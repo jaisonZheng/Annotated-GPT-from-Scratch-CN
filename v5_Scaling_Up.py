@@ -342,5 +342,4 @@ print("训练结束后的输出：")
 print(decode(model.generate(idx = torch.zeros((1, 1), dtype=torch.long, device=device), max_new_tokens=500)[0].tolist()))
 
 # 好耶！ 
-# LayerNorm部分到这里就算是结束了，此时loss ~ 2.1
-# 我们将在另一个文件中完成最后一步：Scaling！
+# 这就是我们的全部内容啦，是时候到服务器上跑一跑，看看效果了！
